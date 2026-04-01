@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException, UploadFile, File
 from app.core.config import settings
 from app.models.schemas import UploadResponse
 from app.services.pdf_service import extract_documents, build_vector_store
-from app.api.routes.chat import sessions
+from app.services.session_store import session_store
 
 router = APIRouter()
 
@@ -32,7 +32,7 @@ async def upload_pdf(file: UploadFile = File(...)):
 
     vector_store = build_vector_store(documents)
     session_id = str(uuid.uuid4())
-    sessions[session_id] = vector_store
+    session_store.create(session_id, vector_store)
 
     return UploadResponse(
         session_id=session_id,

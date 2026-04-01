@@ -1,19 +1,25 @@
 # pdf-chat-api
 
-REST API to ask questions to any PDF in natural language.
+REST API to ask questions to any PDF in natural language using RAG (Retrieval-Augmented Generation).
 
-Upload a PDF, get a session ID, and start chatting. Built with FastAPI, LangChain, FAISS, and Groq — but the LLM provider can be swapped for OpenAI, Gemini, or any LangChain-compatible model by changing two lines in `.env`.
+![demo](repo/Animation.gif)
+
+---
+
+## How it works
+
+1. Upload a PDF → get a `session_id`
+2. Ask questions → the API retrieves relevant chunks via FAISS and answers using an LLM
+3. Chat history is maintained per session — follow-up questions work naturally
+
+The PDF is never sent whole to the LLM. Only the 4 most semantically relevant chunks are retrieved for each question.
 
 ---
 
 ## Stack
 
-- **FastAPI** — REST API framework
-- **LangChain** — LLM orchestration
-- **Groq / OpenAI / Gemini** — LLM provider (configurable)
-- **FAISS** — local vector store, no server needed
-- **HuggingFace Embeddings** — free, runs locally
-- **PyMuPDF** — PDF text extraction
+- FastAPI · LangChain · FAISS · HuggingFace Embeddings
+- LLM: Groq (default) — swappable to OpenAI or Gemini via `.env`
 
 ---
 
@@ -24,11 +30,11 @@ git clone https://github.com/dairxp/pdf-chat-api
 cd pdf-chat-api
 python -m venv venv && source venv/bin/activate  # Windows: venv\Scripts\activate
 pip install -r requirements.txt
-cp .env.example .env  # fill in your API key
+cp .env.example .env  # add your API key
 uvicorn app.main:app --reload
 ```
 
-Docs available at `http://localhost:8000/docs`
+Interactive docs: `http://localhost:8000/docs`
 
 ---
 
@@ -37,40 +43,46 @@ Docs available at `http://localhost:8000/docs`
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | POST | `/upload` | Upload a PDF, returns `session_id` |
-| POST | `/chat/{session_id}` | Ask a question about the uploaded PDF |
+| POST | `/chat/{session_id}` | Ask a question (with chat history) |
+| POST | `/chat/{session_id}/stream` | Same, but streams tokens via SSE |
 | DELETE | `/session/{session_id}` | Clear session from memory |
 
-### Upload PDF
+### Upload
 
 ```bash
-curl -X POST http://localhost:8000/upload \
-  -F "file=@document.pdf"
+curl -X POST http://localhost:8000/upload -F "file=@document.pdf"
+# { "session_id": "abc-123", "pages": 12 }
 ```
 
-```json
-{ "session_id": "abc123", "pages": 12, "message": "PDF ready. Start chatting." }
-```
-
-### Ask a question
+### Chat
 
 ```bash
-curl -X POST http://localhost:8000/chat/abc123 \
+curl -X POST http://localhost:8000/chat/abc-123 \
   -H "Content-Type: application/json" \
   -d '{"question": "What is this document about?"}'
+# { "answer": "...", "sources": [1, 3] }
 ```
 
-```json
-{ "answer": "...", "sources": [1, 3] }
+### Stream (token by token)
+
+```bash
+curl -N -X POST http://localhost:8000/chat/abc-123/stream \
+  -H "Content-Type: application/json" \
+  -d '{"question": "Summarize the document"}'
+# data: {"type": "token", "content": "This"}
+# data: {"type": "token", "content": " document"}
+# data: {"type": "sources", "pages": [1, 3]}
+# data: [DONE]
 ```
 
 ---
 
 ## Switching LLM provider
 
-In `.env`, change the provider and model:
-
 ```env
-# Groq (default)
+# .env
+
+# Groq (default — free)
 LLM_PROVIDER=groq
 LLM_MODEL=llama-3.1-8b-instant
 GROQ_API_KEY=your_key
@@ -90,12 +102,15 @@ No code changes needed.
 ```
 pdf-chat-api/
 ├── app/
-│   ├── main.py              # FastAPI entry point
-│   ├── api/routes/          # upload, chat endpoints
-│   ├── core/config.py       # settings via pydantic-settings
-│   ├── services/            # PDF processing, chat logic
-│   └── models/schemas.py    # Pydantic request/response models
-├── tests/
+│   ├── main.py
+│   ├── api/routes/        # upload, chat, stream
+│   ├── core/config.py     # settings via .env
+│   ├── services/
+│   │   ├── pdf_service.py      # PDF extraction + FAISS indexing
+│   │   ├── chat_service.py     # QA chain + streaming
+│   │   ├── session_store.py    # in-memory session management
+│   │   └── llm_factory.py      # provider switching
+│   └── models/schemas.py
 ├── .env.example
 ├── Dockerfile
 └── requirements.txt
@@ -103,4 +118,4 @@ pdf-chat-api/
 
 ---
 
-> Published by [dairxp](https://github.com/dairxp)
+> Developed by [dairxp](https://github.com/dairxp)
